@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PokéDex T-SQL · Monitoreo y Rendimiento — Base de Datos II</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --pd-red:#E3350D;
+  --pd-red-dark:#A8240A;
+  --pd-navy:#12122A;
+  --pd-navy-2:#1B1B3A;
+  --pd-panel:#20214A;
+  --screen:#9BBC0F;
+  --screen-dim:#6f9b0e;
+  --screen-bg:#0F380F;
+  --screen-bg-2:#173a17;
+  --cream:#FBF3DE;
+  --yellow:#FFC728;
+  --blue-lens:#4FC3F7;
+  --ink:#1A1A2E;
+  --muted:#8b8fb8;
+  --line:rgba(255,255,255,.09);
+  --radius:18px;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:
+    radial-gradient(ellipse 900px 500px at 15% -10%, #2a2b5e 0%, transparent 60%),
+    radial-gradient(ellipse 900px 600px at 100% 0%, #3a1620 0%, transparent 55%),
+    var(--pd-navy);
+  color:var(--cream);
+  font-family:'Poppins',sans-serif;
+  line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--pd-red);color:#fff;}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-track{background:var(--pd-navy-2);}
+::-webkit-scrollbar-thumb{background:var(--pd-red);border-radius:10px;}
+
+.pixel{font-family:'Press Start 2P',cursive;}
+a{color:inherit;}
+
+/* ===== BACKGROUND SCANLINES ===== */
+.scanlines{
+  position:fixed; inset:0; pointer-events:none; z-index:999;
+  background:repeating-linear-gradient(to bottom, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 3px);
+  mix-blend-mode:overlay; opacity:.5;
+}
+
+/* ===== TOP DEX BAR ===== */
+.dexbar{
+  position:sticky; top:0; z-index:100;
+  background:linear-gradient(180deg,var(--pd-red) 0%, var(--pd-red-dark) 100%);
+  border-bottom:6px solid #7d1a06;
+  box-shadow:0 8px 24px rgba(0,0,0,.45);
+}
+.dexbar-inner{
+  max-width:1180px; margin:0 auto; padding:14px 22px;
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+}
+.lens{
+  width:34px; height:34px; border-radius:50%;
+  background:radial-gradient(circle at 32% 28%, #eafcff 0%, var(--blue-lens) 35%, #0b6ea8 75%, #063a58 100%);
+  border:4px solid #f4fbff; box-shadow:0 0 0 3px #0b1330, 0 0 18px rgba(79,195,247,.7);
+  flex-shrink:0;
+  animation:blink 4.2s infinite;
+}
+@keyframes blink{0%,92%,100%{filter:brightness(1);}94%{filter:brightness(1.9);}96%{filter:brightness(.8);}}
+.mini-lights{display:flex; gap:8px; margin-right:6px;}
+.mini-lights span{width:12px;height:12px;border-radius:50%;display:block; box-shadow:inset 0 -2px 3px rgba(0,0,0,.35), 0 0 6px rgba(0,0,0,.3);}
+.mini-lights .r{background:#ff5a4e;} .mini-lights .y{background:#ffe14d;} .mini-lights .g{background:#5be26a;}
+.dexbar-title{display:flex; flex-direction:column; gap:2px;}
+.dexbar-title .pixel{font-size:.72rem; color:#fff; letter-spacing:.5px; text-shadow:2px 2px 0 rgba(0,0,0,.35);}
+.dexbar-title small{color:#ffe1d6; font-weight:600; font-size:.78rem;}
+.dexbar-search{
+  margin-left:auto; display:flex; gap:8px; background:#7d1a06; border-radius:30px; padding:6px 14px;
+  align-items:center; font-size:.82rem; color:#ffd9cc; font-weight:600;
+}
+
+/* ===== NAV STRIP ===== */
+.navstrip{
+  position:sticky; top:78px; z-index:90;
+  background:var(--pd-navy-2); border-bottom:1px solid var(--line);
+  overflow-x:auto; white-space:nowrap;
+}
+.navstrip-inner{max-width:1180px; margin:0 auto; padding:10px 22px; display:flex; gap:10px;}
+.navpill{
+  flex-shrink:0; font-size:.74rem; font-weight:700; padding:8px 14px; border-radius:20px;
+  background:var(--pd-panel); border:1px solid var(--line); color:var(--cream); cursor:pointer;
+  text-decoration:none; display:inline-flex; align-items:center; gap:6px; transition:.2s;
+}
+.navpill:hover{background:var(--pd-red); border-color:var(--pd-red); transform:translateY(-1px);}
+.navpill .dot{width:7px;height:7px;border-radius:50%; background:var(--screen);}
+
+/* ===== HERO ===== */
+.hero{max-width:1180px; margin:0 auto; padding:64px 22px 40px; text-align:center;}
+.hero .eyebrow{
+  font-family:'JetBrains Mono',monospace; font-size:.78rem; letter-spacing:3px; color:var(--screen);
+  text-transform:uppercase; margin-bottom:18px; display:inline-flex; align-items:center; gap:10px;
+}
+.hero .eyebrow::before, .hero .eyebrow::after{content:"";width:26px;height:2px;background:var(--screen); opacity:.6;}
+.hero h1{
+  font-family:'Press Start 2P',cursive; font-size:clamp(1.4rem,4vw,2.5rem); line-height:1.5;
+  margin:0 0 20px; color:#fff; text-shadow:3px 3px 0 var(--pd-red), 6px 6px 0 rgba(0,0,0,.35);
+}
+.hero p.lead{max-width:640px; margin:0 auto 30px; color:var(--muted); font-size:1.02rem;}
+.hero-meta{
+  display:flex; justify-content:center; gap:14px; flex-wrap:wrap; margin-top:10px;
+}
+.meta-chip{
+  background:var(--pd-panel); border:1px solid var(--line); padding:10px 18px; border-radius:14px;
+  font-size:.82rem; text-align:left; min-width:170px;
+}
+.meta-chip b{display:block; color:var(--yellow); font-size:.68rem; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; font-family:'JetBrains Mono',monospace;}
+
+/* pokeball decoration */
+.pokeball-deco{
+  width:120px; height:120px; margin:34px auto 0; position:relative; animation:float 4.5s ease-in-out infinite;
+}
+@keyframes float{0%,100%{transform:translateY(0) rotate(0deg);}50%{transform:translateY(-10px) rotate(6deg);}}
+.pokeball-deco .ball{width:100%; height:100%; border-radius:50%; background:linear-gradient(#fff 50%, var(--pd-red) 50%); border:5px solid var(--ink); position:relative; overflow:hidden; box-shadow:0 10px 30px rgba(227,53,13,.35);}
+.pokeball-deco .ball::before{content:"";position:absolute; left:0; right:0; top:calc(50% - 3px); height:6px; background:var(--ink);}
+.pokeball-deco .ball::after{content:"";position:absolute; width:34px; height:34px; border-radius:50%; background:#fff; border:5px solid var(--ink); left:50%; top:50%; transform:translate(-50%,-50%);}
+
+/* ===== SECTION / TEMA CARD ===== */
+.wrap{max-width:1180px; margin:0 auto; padding:0 22px 80px;}
+.tema{
+  scroll-margin-top:150px;
+  margin-top:64px; border-radius:var(--radius);
+  background:linear-gradient(180deg,var(--pd-panel) 0%, #191a3d 100%);
+  border:1px solid var(--line); overflow:hidden;
+  box-shadow:0 20px 50px rgba(0,0,0,.35);
+}
+.tema-head{
+  display:flex; align-items:center; gap:18px; padding:26px 28px; flex-wrap:wrap;
+  background:radial-gradient(1100px 220px at -10% -60%, rgba(227,53,13,.35), transparent 60%);
+  border-bottom:1px solid var(--line);
+}
+.tema-num{
+  font-family:'Press Start 2P',cursive; font-size:.95rem; color:var(--pd-navy);
+  background:var(--yellow); width:64px; height:64px; border-radius:16px; display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; box-shadow:0 6px 0 #b98800;
+}
+.tema-titles{flex:1; min-width:220px;}
+.tema-titles h2{margin:0 0 6px; font-size:1.4rem; color:#fff; font-weight:800;}
+.tema-titles .sub{color:var(--muted); font-size:.88rem;}
+.type-badge{
+  font-family:'JetBrains Mono',monospace; font-size:.68rem; font-weight:700; letter-spacing:1px;
+  padding:6px 14px; border-radius:30px; text-transform:uppercase; color:#0b0b1a; flex-shrink:0;
+}
+.tema-body{padding:6px 28px 30px;}
+
+.subhead{
+  display:flex; align-items:center; gap:10px; margin:26px 0 14px; font-weight:800; color:#fff; font-size:1rem;
+}
+.subhead .tag{
+  font-family:'JetBrains Mono',monospace; font-size:.65rem; background:var(--screen-bg); color:var(--screen);
+  padding:3px 8px; border-radius:6px; border:1px solid var(--screen-dim);
+}
+
+.grid-cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:6px;}
+.mini-card{
+  background:rgba(255,255,255,.03); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+}
+.mini-card h4{margin:0 0 6px; font-size:.86rem; color:var(--yellow); display:flex; gap:8px; align-items:center;}
+.mini-card p{margin:0; font-size:.82rem; color:var(--muted);}
+
+ul.bullets{margin:0; padding-left:0; list-style:none; display:grid; gap:8px;}
+ul.bullets li{
+  padding-left:26px; position:relative; font-size:.9rem; color:#e9e9f7;
+}
+ul.bullets li::before{
+  content:"●"; position:absolute; left:0; top:1px; color:var(--pd-red); font-size:.7rem; top:5px;
+}
+
+table.dex-table{width:100%; border-collapse:collapse; font-size:.82rem; margin:4px 0 10px; overflow:hidden; border-radius:10px;}
+table.dex-table th, table.dex-table td{padding:9px 12px; border-bottom:1px solid var(--line); text-align:left;}
+table.dex-table th{background:var(--pd-red-dark); color:#fff; font-family:'JetBrains Mono',monospace; font-size:.68rem; text-transform:uppercase; letter-spacing:.5px;}
+table.dex-table tr:nth-child(even){background:rgba(255,255,255,.03);}
+.table-scroll{overflow-x:auto; border-radius:10px; border:1px solid var(--line);}
+.table-scroll table{border:none; margin:0;}
+
+.divider{
+  display:flex; align-items:center; gap:12px; margin:30px 0 20px; color:var(--muted); font-size:.7rem;
+  font-family:'JetBrains Mono',monospace; letter-spacing:2px; text-transform:uppercase;
+}
+.divider::before, .divider::after{content:""; height:2px; flex:1; background:repeating-linear-gradient(90deg,var(--line) 0 6px, transparent 6px 12px);}
+
+/* ===== CATCH BUTTON ===== */
+.catch-btn{
+  display:flex; align-items:center; gap:12px; justify-content:center;
+  width:100%; padding:16px 20px; border-radius:16px; cursor:pointer; border:none;
+  background:linear-gradient(180deg, var(--pd-red) 0%, var(--pd-red-dark) 100%);
+  color:#fff; font-weight:800; font-size:.95rem; box-shadow:0 8px 0 #7d1a06, 0 12px 24px rgba(227,53,13,.3);
+  transition:transform .12s ease, box-shadow .12s ease;
+}
+.catch-btn:hover{transform:translateY(-2px);}
+.catch-btn:active{transform:translateY(4px); box-shadow:0 3px 0 #7d1a06;}
+.catch-btn .mini-ball{
+  width:26px; height:26px; border-radius:50%; background:linear-gradient(#fff 50%, var(--ink) 50%);
+  border:3px solid var(--ink); position:relative; flex-shrink:0; transition:transform .4s;
+}
+.catch-btn .mini-ball::after{content:"";position:absolute; width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid var(--ink); left:50%; top:50%; transform:translate(-50%,-50%);}
+.catch-btn.open .mini-ball{transform:rotate(200deg);}
+.catch-btn .chevron{transition:transform .3s; font-size:.75rem;}
+.catch-btn.open .chevron{transform:rotate(180deg);}
+
+.exercises-drawer{
+  max-height:0; overflow:hidden; transition:max-height .5s ease;
+}
+.exercises-drawer.open{max-height:20000px;}
+.exercises-inner{padding-top:22px; display:grid; gap:18px;}
+
+.proyecto{
+  border:1px solid var(--line); border-radius:14px; overflow:hidden; background:rgba(0,0,0,.15);
+}
+.proyecto-head{
+  padding:14px 18px; background:linear-gradient(90deg, rgba(227,53,13,.22), transparent);
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.proyecto-head .pnum{
+  font-family:'Press Start 2P',cursive; font-size:.62rem; color:#fff; background:var(--pd-red); padding:6px 9px; border-radius:8px;
+}
+.proyecto-head h5{margin:0; font-size:.94rem; color:#fff;}
+.proyecto-body{padding:16px 18px 20px;}
+.proyecto-body p.enun{font-size:.86rem; color:#dcdcf2; margin:0 0 12px;}
+
+pre.code{
+  background:var(--screen-bg); color:var(--screen); border-radius:10px; padding:16px 18px; overflow-x:auto;
+  font-family:'JetBrains Mono',monospace; font-size:.76rem; line-height:1.6; border:1px solid var(--screen-dim);
+  margin:0 0 14px; box-shadow:inset 0 0 30px rgba(0,0,0,.4);
+}
+pre.code .kw{color:#e7ff6b; font-weight:700;}
+pre.code .cm{color:#6fae52; font-style:italic;}
+
+.two-col{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+@media(max-width:640px){.two-col{grid-template-columns:1fr;}}
+.pill-list{margin:0; padding-left:0; list-style:none; display:grid; gap:6px;}
+.pill-list li{font-size:.8rem; padding:8px 10px; background:rgba(255,255,255,.04); border-radius:8px; border-left:3px solid var(--pd-red); color:#dedeef;}
+.pill-list.good li{border-left-color:var(--screen);}
+
+/* ===== FOOTER ===== */
+footer{
+  text-align:center; padding:50px 22px 70px; color:var(--muted); font-size:.8rem;
+}
+footer .pixel{font-size:.6rem; color:var(--yellow); display:block; margin-bottom:10px; letter-spacing:1px;}
+
+/* fade-in on scroll */
+.tema{opacity:0; transform:translateY(24px); transition:opacity .6s ease, transform .6s ease;}
+.tema.show{opacity:1; transform:translateY(0);}
+
+/* back to top */
+.top-btn{
+  position:fixed; bottom:24px; right:24px; z-index:200; width:52px; height:52px; border-radius:50%;
+  background:var(--pd-red); border:3px solid #fff; color:#fff; font-size:1.2rem; cursor:pointer;
+  box-shadow:0 8px 20px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .3s, transform .2s;
+}
+.top-btn.show{opacity:1; pointer-events:auto;}
+.top-btn:hover{transform:scale(1.08);}
+
+@media(max-width:700px){
+  .navstrip{top:96px;}
+  .tema-head{padding:20px 18px;}
+  .tema-body{padding:4px 18px 24px;}
+}
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+
+<header class="dexbar">
+  <div class="dexbar-inner">
+    <div class="lens"></div>
+    <div class="mini-lights"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <div class="dexbar-title">
+      <span class="pixel">POKÉDEX · T-SQL</span>
+      <small>UPLA · Base de Datos II · Monitoreo y Rendimiento</small>
+    </div>
+    <div class="dexbar-search">⬤ 6 TEMAS REGISTRADOS</div>
+  </div>
+</header>
+
+<nav class="navstrip">
+  <div class="navstrip-inner" id="navstrip"></div>
+</nav>
+
+<section class="hero">
+  <span class="eyebrow">Cuaderno de campo · SQL Server</span>
+  <h1>MONITOREO<br>&amp; RENDIMIENTO</h1>
+  <p class="lead">Una PokéDex con la teoría y los ejercicios resueltos del curso <b>Base de Datos II</b>: SQL Profiler, índices, transacciones, planes de ejecución, optimización T-SQL y Resource Governor. Presiona la Poké Ball de cada tema para capturar sus ejercicios.</p>
+  <div class="hero-meta">
+    <div class="meta-chip"><b>Curso</b>Base de Datos II</div>
+    <div class="meta-chip"><b>Docente</b>Mg. Ing. Raúl Fernández Bejarano</div>
+    <div class="meta-chip"><b>Alumno</b>Marcelo Caballero Fernando</div>
+    <div class="meta-chip"><b>Universidad</b>UPLA · Huancayo</div>
+  </div>
+  <div class="pokeball-deco"><div class="ball"></div></div>
+</section>
+
+<main class="wrap" id="app"></main>
+
+<footer>
+  <span class="pixel">¡GOTTA LEARN 'EM ALL!</span>
+  Elaborado para el curso Base de Datos II — UPLA. Todo el contenido técnico proviene de las fichas de teoría y ejercicios del sílabo.
+</footer>
+
+<button class="top-btn" id="topBtn" title="Subir">↑</button>
+
+<script>
+/* ============ DATA ============ */
+const temas = [
+{
+  num:1,
+  id:"profiler",
+  title:"SQL Profiler & Extended Events",
+  sub:"Captura y diagnóstico del comportamiento de las consultas",
+  type:"MONITOREO", color:"#4FC3F7",
+  info:[
+    {h:"¿Qué son?", p:"SQL Profiler: herramienta tradicional que captura eventos y trazas en tiempo real, ideal para diagnóstico básico. Extended Events: herramienta ligera y escalable integrada en el motor de SQL Server que reemplaza y supera a Profiler."},
+    {h:"¿Para qué sirven?", p:"Identificar consultas lentas y cuellos de botella, detectar bloqueos/esperas/deadlocks, analizar uso de CPU e I/O, optimizar consultas y auditar seguridad."},
+  ],
+  compare:{
+    headers:["Característica","SQL Profiler","Extended Events"],
+    rows:[
+      ["Impacto en el sistema","Alto (más overhead)","Bajo (diseñado para producción)"],
+      ["Escalabilidad","Limitada","Alta"],
+      ["Filtros","Básicos","Avanzados y flexibles"],
+      ["Destinos de captura","Archivo, tabla, Profiler UI","Archivo, memoria, ring buffer"],
+      ["Precisión de eventos","Limitada","Granular y precisa"],
+      ["Soporte futuro","En desuso (deprecado)","Recomendada por Microsoft"],
+    ]
+  },
+  bullets:[
+    "Eventos comunes: SQL:BatchCompleted / RPC:Completed, SP:StmtCompleted, Lock:Acquired / Lock:Released, Deadlock Graph, Wait Info.",
+    "Buenas prácticas: capturar solo lo necesario, filtrar por base de datos/duración/aplicación, evitar trazas prolongadas y limpiar sesiones periódicamente.",
+    "Salida típica: archivo .xel → tablas en SQL Server → reportes/dashboards (Power BI, SSMS) → identificación de oportunidades de mejora."
+  ],
+  ejercicios:[
+    {
+      titulo:"Respaldo institucional: monitoreo con Extended Events",
+      enun:"Capturar consultas con duración > 1000 ms sobre las bases de datos GradosTitulos, identificando consultas costosas sobre los esquemas Academico, Tramite, Evaluacion y Documento; generar un reporte con los resultados.",
+      code:`CREATE EVENT SESSION [Monitor_Lentas_GradosTitulos] ON SERVER
+ADD EVENT sqlserver.sql_batch_completed(
+  ACTION (sqlserver.sql_text, sqlserver.database_id,
+          sqlserver.session_id, sqlserver.client_hostname,
+          sqlserver.username)
+  WHERE (database_id = DB_ID('GradosTitulos') AND duration > 1000000)
+)
+ADD EVENT sqlserver.rpc_completed(
+  ACTION (sqlserver.sql_text, sqlserver.database_id,
+          sqlserver.session_id, sqlserver.client_hostname,
+          sqlserver.username)
+  WHERE (database_id = DB_ID('GradosTitulos') AND duration > 1000000)
+)
+ADD TARGET package0.event_file(
+  SET filename = N'C:\\XE_Sessions\\Lentas_GradosTitulos.xel',
+      max_file_size = 50, max_rollover_files = 10
+)
+WITH (MAX_MEMORY = 4096 KB, EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS,
+      MAX_DISPATCH_LATENCY = 5 SECONDS, MAX_EVENT_SIZE = 0 KB,
+      MEMORY_PARTITION_MODE = NONE, TRACK_CAUSALITY = ON, STARTUP_STATE = ON);
+GO
+ALTER EVENT SESSION [Monitor_Lentas_GradosTitulos] ON SERVER STATE = START;
+GO
+
+-- Reporte de consultas capturadas
+SELECT
+  event_data.value('(event/@name)[1]','varchar(50)') AS NombreEvento,
+  event_data.value('(event/@timestamp)[1]','datetime') AS HoraUtc,
+  event_data.value('(event/action[@name="database_id"]/value)[1]','int') AS BaseDatosId,
+  event_data.value('(event/action[@name="client_hostname"]/value)[1]','varchar(100)') AS Usuario,
+  event_data.value('(event/data[@name="duration"]/value)[1]','bigint')/1000.0 AS Duracion_ms,
+  event_data.value('(event/data[@name="sql_text"]/value)[1]','nvarchar(max)') AS SQL_Texto
+FROM ( SELECT CAST(event_data AS XML) AS event_data
+       FROM sys.fn_xe_file_target_read_file
+         (N'C:\\XE_Sessions\\Lentas_GradosTitulos*.xel', NULL, NULL, NULL) ) AS xe_data
+WHERE SQL_Texto LIKE '%Academico.%' OR SQL_Texto LIKE '%Tramite.%'
+   OR SQL_Texto LIKE '%Evaluacion.%' OR SQL_Texto LIKE '%Documento.%'
+ORDER BY Duracion_ms DESC;`,
+      justif:["Extended Events es ligero y moderno, con mínimo impacto.","Captura sql_batch_completed y rpc_completed.","Umbral de 1000 ms enfocado en la lentitud.","Filtro por database_id evita ruido de otras BD."],
+      buenas:["Configuración mínima intrusiva.","Destino en disco con rotación de archivos.","Inicio automático con el servicio.","Reporte independiente y parametrizado."]
+    },
+    {
+      titulo:"Backups diferenciales: monitoreo automático global",
+      enun:"Capturar automáticamente consultas lentas, deadlocks, bloqueos, errores con severidad ≥ 16 y CPU excesivo. Toda la información se almacena en un único archivo .xel.",
+      code:`EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+EXEC sp_configure 'blocked process threshold', 10; -- 10 segundos
+RECONFIGURE;
+
+CREATE EVENT SESSION [Monitor_Global_GradosTitulos] ON SERVER
+ADD EVENT sqlserver.sql_batch_completed(
+  ACTION (sqlserver.sql_text, sqlserver.database_id, sqlserver.session_id,
+          sqlserver.client_hostname, sqlserver.username, sqlserver.cpu_id,
+          sqlserver.scheduler_id)
+  WHERE (database_id = DB_ID('GradosTitulos') AND duration > 1000000)
+)
+ADD EVENT sqlserver.rpc_completed( ... WHERE duration > 1000000 )
+ADD EVENT sqlserver.xml_deadlock_report
+ADD EVENT sqlserver.blocked_process_report(
+  WHERE ([severity] >= 16) )
+ADD EVENT sqlserver.error_reported(
+  ACTION (sqlserver.sql_text, sqlserver.database_id, sqlserver.session_id,
+          sqlserver.client_hostname, sqlserver.username)
+  WHERE (database_id = DB_ID('GradosTitulos') AND severity >= 16)
+)
+ADD EVENT sqlserver.sql_batch_completed(
+  ACTION (sqlserver.cpu_time)
+  WHERE (database_id = DB_ID('GradosTitulos') AND cpu_time > 5000000)
+)
+ADD TARGET package0.event_file(
+  SET filename = N'C:\\XE_Sessions\\Global_GradosTitulos.xel' )
+WITH (STARTUP_STATE = ON);
+GO
+ALTER EVENT SESSION [Monitor_Global_GradosTitulos] ON SERVER STATE = START;
+GO`,
+      justif:["Consultas lentas: duration > 1 s.","Deadlocks: gráfico XML para análisis completo.","Bloqueos: blocked_process_report con umbral configurado.","Errores graves: severity ≥ 16.","Archivo único simplifica almacenamiento y análisis."],
+      buenas:["Monitoreo ligero y específico con Extended Events.","Umbrales realistas ajustables.","Eventos separados por objetivo (lentitud, CPU).","Habilitación de blocked process threshold."]
+    },
+    {
+      titulo:"Diagnóstico permanente con tabla histórica",
+      enun:"Implementar un sistema permanente que registre las consultas lentas (8:00-18:00), las almacene en un archivo de eventos, importe periódicamente a una tabla de auditoría y genere reportes de las consultas más costosas.",
+      code:`CREATE SCHEMA Auditoria;
+GO
+CREATE TABLE Auditoria.RendimientoConsultas (
+  IdRegistro       INT IDENTITY PRIMARY KEY,
+  FechaHoraUtc     DATETIME2,
+  BaseDatos        VARCHAR(100),
+  Usuario          VARCHAR(100),
+  DuracionMs       DECIMAL(18,2),
+  CpuMs            DECIMAL(18,2),
+  LecturasLogicas  BIGINT,
+  SQL_Texto        NVARCHAR(MAX),
+  FechaImportacion DATETIME2 DEFAULT SYSDATETIME()
+);
+GO
+
+CREATE OR ALTER PROCEDURE Auditoria.ImportarRendimientoConsultas
+AS
+BEGIN
+  SET NOCOUNT ON;
+  INSERT INTO Auditoria.RendimientoConsultas
+        (FechaHoraUtc, BaseDatos, Usuario, DuracionMs, CpuMs, LecturasLogicas, SQL_Texto)
+  SELECT ev.value('(event/@timestamp)[1]','datetime2'),
+         DB_NAME(ev.value('(event/action[@name="database_id"]/value)[1]','int')),
+         ev.value('(event/action[@name="username"]/value)[1]','varchar(100)'),
+         ev.value('(event/data[@name="duration"]/value)[1]','bigint')/1000.0,
+         ev.value('(event/data[@name="cpu_time"]/value)[1]','bigint')/1000.0,
+         ev.value('(event/data[@name="logical_reads"]/value)[1]','bigint'),
+         ev.value('(event/data[@name="sql_text"]/value)[1]','nvarchar(max)')
+  FROM (SELECT CAST(event_data AS XML) AS event_data
+        FROM sys.fn_xe_file_target_read_file(
+             N'C:\\XE_Sessions\\Permanente_GradosTitulos*.xel', NULL, NULL, NULL)) x
+       CROSS APPLY event_data.nodes('event') AS T(ev);
+END;
+GO
+
+-- Agente SQL: ejecutar cada hora en horario 8:00-18:00
+EXEC dbo.sp_add_job @job_name = N'Importacion_RendimientoConsultas';
+EXEC dbo.sp_add_jobstep @job_name = N'Importacion_RendimientoConsultas',
+     @step_name = N'EjecutarImportacion',
+     @command = N'EXEC Auditoria.ImportarRendimientoConsultas;';
+
+-- Top 10 más lentas
+SELECT TOP 10 SQL_Texto, DuracionMs, CpuMs, LecturasLogicas
+FROM Auditoria.RendimientoConsultas
+ORDER BY DuracionMs DESC;`,
+      justif:["Captura permanente en horario laboral (8:00-18:00).","Archivo XEL como buffer eficiente.","Tabla histórica para retención y análisis.","Importación automatizada con Agente SQL.","Reportes independientes por métrica clave."],
+      buenas:["Automatización completa del proceso.","Separación de responsabilidades.","Impacto mínimo en el servidor.","Control de volumen de registros.","Horarios alineados a la ventana de monitoreo."]
+    }
+  ]
+},
+{
+  num:2,
+  id:"indices",
+  title:"Estadísticas e Índices",
+  sub:"Creación, fragmentación y mantenimiento",
+  type:"ÍNDICE", color:"#FFC728",
+  info:[
+    {h:"Estadísticas", p:"Información sobre la distribución de los datos en las columnas; permiten al optimizador generar mejores planes de ejecución."},
+    {h:"Índices", p:"Estructuras que mejoran la velocidad de búsqueda y ordenamiento de los datos, a cambio de espacio de almacenamiento y mantenimiento."},
+  ],
+  bullets:[
+    "Tipos: Clustered (define el orden físico, máximo 1 por tabla), Nonclustered (separado, varios por tabla), Filtrado (subconjunto de filas), Columnstore (por columnas, ideal analítica) e In-Memory (rendimiento extremo OLTP).",
+    "Reorganize Index: desfragmenta sin reconstruir, menos recursos, no bloquea, ideal para fragmentación media (5%-30%).",
+    "Rebuild Index: reconstruye completamente, más recursos, puede bloquear la tabla, ideal para fragmentación alta (>30%).",
+    "Buenas prácticas: crear índices solo en columnas usadas en filtros/joins/agrupamientos, evitar duplicados, monitorear crecimiento y probar antes de mantenimiento pesado."
+  ],
+  compare:{
+    headers:["Nivel de fragmentación","Porcentaje","Acción recomendada"],
+    rows:[
+      ["Baja","0% – 5%","Ninguna"],
+      ["Media","5% – 30%","REORGANIZE INDEX"],
+      ["Alta","30% – 100%","REBUILD INDEX"],
+      ["Extrema",">100%","REBUILD INDEX"],
+    ]
+  },
+  ejercicios:[
+    {
+      titulo:"Optimización de índices para consultas de estudiantes",
+      enun:"Las consultas sobre Academico.Persona, Academico.Matricula y Tramite.Tramite presentan lentitud. Analizar índices existentes, detectar índices faltantes, crear índices Clustered y NonClustered usando columnas INCLUDE cuando sea beneficioso, y comparar tiempos antes/después.",
+      code:`SET STATISTICS TIME ON; SET STATISTICS IO ON;
+
+-- Consulta de prueba (antes)
+SELECT p.DNI, p.Nombres
+FROM Academico.Persona p
+JOIN Academico.Matricula m ON p.IdPersona = m.IdEstudiante
+JOIN Tramite.Tramite t ON m.IdMatricula = t.IdMatricula
+WHERE p.DNI = '12345678';
+
+-- Índice para búsqueda por DNI y sus trámites/matrículas activas
+CREATE NONCLUSTERED INDEX IX_Matricula_Estudiante_Incl
+ON Academico.Matricula (IdEstudiante)
+INCLUDE (FechaMatricula, FechaEgreso);
+
+CREATE NONCLUSTERED INDEX IX_Tramite_IdMatricula_Estado
+ON Tramite.Tramite (IdMatricula, IdEstadoTramite)
+INCLUDE (FechaInicio, IdTipoTramite);
+
+CREATE NONCLUSTERED INDEX IX_Persona_DNI_Incl
+ON Academico.Persona (DNI)
+INCLUDE (Nombres, ApellidoPaterno, ApellidoMaterno);
+
+UPDATE STATISTICS Academico.Persona;
+UPDATE STATISTICS Academico.Matricula;
+UPDATE STATISTICS Tramite.Tramite;
+
+-- Consulta de prueba (después): mismo texto, plan optimizado
+SET STATISTICS TIME OFF; SET STATISTICS IO OFF;`,
+      justif:["Revisión de índices existentes evita duplicidades y esfuerzos.","DMV de índices faltantes sugiere mejoras basadas en el plan.","Índices con INCLUDE reducen lecturas y accesos a disco.","Medición con STATISTICS TIME/IO demuestra mejoras cuantitativas."],
+      buenas:["Antes de indexar, observar (analizar/detectar).","Índices selectivos y de cobertura (usar INCLUDE).","Impacto mínimo en escritura (índices NonClustered).","Documentar y seguir convenciones (IX_Tabla_Columnas_Incl)."]
+    },
+    {
+      titulo:"Detección y corrección de fragmentación",
+      enun:"Crear un procedimiento que detecte fragmentación >20%, reorganice entre 20%-40%, reconstruya >40%, actualice estadísticas después de cada operación y genere un reporte del % de mejora por índice.",
+      code:`CREATE TABLE dbo.MantenimientoIndices_Log (
+  Id INT IDENTITY PRIMARY KEY,
+  FechaOperacion DATETIME2 DEFAULT SYSDATETIME(),
+  Esquema VARCHAR(128), Tabla VARCHAR(128), Indice VARCHAR(128),
+  Accion VARCHAR(20),
+  FragmentacionAntes DECIMAL(5,2), FragmentacionDespues DECIMAL(5,2),
+  MejoraPorcentaje DECIMAL(5,2), DuracionMs INT, MensajeError VARCHAR(500)
+);
+GO
+
+CREATE OR ALTER PROCEDURE dbo.sp_MantenimientoIndices_Fragmentacion
+AS
+BEGIN
+  DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
+  SELECT DB_NAME(ips.database_id), OBJECT_NAME(ips.object_id, ips.database_id),
+         i.name, ips.avg_fragmentation_in_percent
+  FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL,'LIMITED') ips
+  JOIN sys.indexes i ON ips.object_id = i.object_id AND ips.index_id = i.index_id
+  WHERE ips.avg_fragmentation_in_percent > 20 AND i.name IS NOT NULL;
+
+  DECLARE @esquema VARCHAR(128), @tabla VARCHAR(128), @indice VARCHAR(128), @frag DECIMAL(5,2);
+  OPEN cur; FETCH NEXT FROM cur INTO @esquema,@tabla,@indice,@frag;
+
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    BEGIN TRY
+      IF @frag > 40
+        EXEC('ALTER INDEX [' + @indice + '] ON ' + @esquema + '.' + @tabla + ' REBUILD;');
+      ELSE
+        EXEC('ALTER INDEX [' + @indice + '] ON ' + @esquema + '.' + @tabla + ' REORGANIZE;');
+
+      EXEC('UPDATE STATISTICS ' + @esquema + '.' + @tabla + ';');
+
+      INSERT INTO dbo.MantenimientoIndices_Log(Esquema,Tabla,Indice,Accion,FragmentacionAntes)
+      VALUES (@esquema,@tabla,@indice, CASE WHEN @frag>40 THEN 'REBUILD' ELSE 'REORGANIZE' END, @frag);
+    END TRY
+    BEGIN CATCH
+      INSERT INTO dbo.MantenimientoIndices_Log(Esquema,Tabla,Indice,MensajeError)
+      VALUES (@esquema,@tabla,@indice, ERROR_MESSAGE());
+    END CATCH
+    FETCH NEXT FROM cur INTO @esquema,@tabla,@indice,@frag;
+  END
+  CLOSE cur; DEALLOCATE cur;
+END;
+GO
+EXEC dbo.sp_MantenimientoIndices_Fragmentacion;`,
+      justif:["DMV sys.dm_db_index_physical_stats entrega datos confiables de fragmentación.","Umbrales 20%-40% (REORGANIZE) y >40% (REBUILD) siguen mejores prácticas.","Se actualizan estadísticas después de cada operación.","Se registra antes/después y se calcula % de mejora.","Manejo de errores con TRY/CATCH evita interrupciones."],
+      buenas:["Cursor LOCAL FAST_FORWARD para eficiencia.","DDL dinámico seguro con sp_executesql.","Registro completo para auditoría y tendencias.","Usar LIMITED para captura rápida."]
+    },
+    {
+      titulo:"Automatización del mantenimiento de índices",
+      enun:"Diseñar un proceso periódico y automático que actualice estadísticas, reorganice índices con fragmentación moderada, reconstruya índices críticos con alta fragmentación, registre fecha/duración/resultado y se ejecute con SQL Server Agent sin intervención manual.",
+      code:`CREATE TABLE dbo.MantenimientoProgramado_Log (
+  Id INT IDENTITY PRIMARY KEY,
+  FechaEjecucion DATETIME2 DEFAULT SYSDATETIME(),
+  TipoOperacion VARCHAR(30), Esquema VARCHAR(128), Tabla VARCHAR(128), Indice VARCHAR(128),
+  DuracionMs INT, Resultado VARCHAR(20), MensajeError VARCHAR(500)
+);
+GO
+
+-- 1) Actualizar estadísticas globalmente
+EXEC sp_updatestats;
+
+-- 2) Revisar fragmentación y decidir acción
+--    20%-40%  -> REORGANIZE
+--    >40%    -> REBUILD (crítico)
+
+-- 3) Registrar cada operación (duración y resultado) -> MantenimientoProgramado_Log
+
+-- 4) Programar job en SQL Server Agent
+EXEC msdb.dbo.sp_add_job @job_name = N'MantenimientoIndices_GradosTitulos';
+EXEC msdb.dbo.sp_add_jobstep
+     @job_name = N'MantenimientoIndices_GradosTitulos',
+     @step_name = N'EjecutarMantenimiento',
+     @subsystem = N'TSQL',
+     @command = N'EXEC dbo.sp_MantenimientoIndices_Fragmentacion;',
+     @database_name = N'GradosTitulos';
+EXEC msdb.dbo.sp_add_schedule
+     @schedule_name = N'Dominical_2AM',
+     @freq_type = 8, @freq_interval = 1,
+     @active_start_time = 020000;
+EXEC msdb.dbo.sp_attach_schedule
+     @job_name = N'MantenimientoIndices_GradosTitulos',
+     @schedule_name = N'Dominical_2AM';
+EXEC msdb.dbo.sp_add_jobserver
+     @job_name = N'MantenimientoIndices_GradosTitulos';`,
+      justif:["sp_updatestats garantiza estadísticas actualizadas de forma global.","Rebuild aplicado solo a índices críticos para equilibrio rendimiento/impacto.","Reorganize en línea para fragmentación moderada (bajo impacto).","Programación automática en horario de baja demanda (domingo 02:00 a.m.)."],
+      buenas:["Automatización completa con SQL Agent.","Separación de responsabilidades.","Esquema del log dentro de la BD para trazabilidad.","Código claro, comentado y reutilizable."]
+    }
+  ]
+},
+{
+  num:3,
+  id:"transacciones",
+  title:"Transacciones y Bloqueos",
+  sub:"Propiedades ACID, aislamiento y control de concurrencia",
+  type:"CONTROL", color:"#FF6B6B",
+  info:[
+    {h:"ACID", p:"Atomicidad (todo o nada), Consistencia (datos íntegros), Aislamiento (sin interferencias entre transacciones concurrentes) y Durabilidad (cambios confirmados permanecen ante fallos)."},
+    {h:"Bloqueos", p:"Un bloqueo es un recurso en uso exclusivo que impide el acceso a otras sesiones. Los niveles de aislamiento controlan cuánto se pueden ver los cambios de otras transacciones."},
+  ],
+  compare:{
+    headers:["Nivel de aislamiento","Lecturas sucias","No repetibles","Fantasma","Recomendado para"],
+    rows:[
+      ["READ UNCOMMITTED","Ocurre","Ocurre","Ocurre","Reportes, consultas sin crítica de datos"],
+      ["READ COMMITTED","No ocurre","Puede ocurrir","Puede ocurrir","Operaciones OLTP generales"],
+      ["REPEATABLE READ","No ocurre","No ocurre","Puede ocurrir","Procesos con estabilidad de filas"],
+      ["SERIALIZABLE","No ocurre","No ocurre","No ocurre","Procesos críticos, máxima consistencia"],
+    ]
+  },
+  bullets:[
+    "Tipos de bloqueo: S (Shared, lectura), X (Exclusive, escritura), U (Update), IX (Intent Exclusive) e IS (Intent Shared), con reglas de compatibilidad entre ellos.",
+    "Detección de bloqueos: EXEC sp_WhoIsActive @get_locks = 1; y consultas sobre sys.dm_tran_locks.",
+    "Buenas prácticas: transacciones cortas, acceso a datos en orden consistente, nivel de aislamiento adecuado, monitoreo regular de bloqueos y deadlocks."
+  ],
+  ejercicios:[
+    {
+      titulo:"Control de transacciones en la aprobación de títulos",
+      enun:"Implementar una transacción que garantice atomicidad al aprobar un título profesional: confirmar con COMMIT si todo es correcto, o revertir con ROLLBACK ante cualquier error, registrando el error en una tabla de log.",
+      code:`CREATE TABLE dbo.ErrorLog_Transacciones (
+  IdError INT IDENTITY PRIMARY KEY,
+  FechaError DATETIME2 NOT NULL DEFAULT SYSDATETIME(),
+  NumeroError INT, LineaError INT,
+  MensajeError NVARCHAR(4000), Procedimiento NVARCHAR(128),
+  TransaccionAbortada BIT
+);
+GO
+
+CREATE OR ALTER PROCEDURE dbo.SP_AprobarTituloProfesional
+  @IdTramite INT, @IdEvaluacionFinal INT,
+  @FechaResolucion DATE, @OrganoEmisor VARCHAR(100), @NroDiploma VARCHAR(50)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  BEGIN TRY
+    BEGIN TRANSACTION;
+
+    IF NOT EXISTS (SELECT 1 FROM Evaluacion.EvaluacionTrabajo
+                    WHERE IdEvaluacion = @IdEvaluacionFinal AND Condicion = 'APROBADO')
+      THROW 60001,'La evaluación final no está aprobada o no corresponde a sustentación.',1;
+
+    UPDATE Tramite.Tramite
+      SET IdEstadoTramite = 5, Observaciones = ISNULL(Observaciones,'') + ' Aprobado por sistema.'
+      WHERE IdTramite = @IdTramite;
+    IF @@ROWCOUNT = 0 THROW 60002,'No se encontró el trámite especificado.',1;
+
+    INSERT INTO Documento.Resolucion (IdTramite, NroResolucion, FechaResolucion, OrganoEmisor, Descripcion)
+    VALUES (@IdTramite,'APROBACION_TITULO', @FechaResolucion, @OrganoEmisor,
+            'Resolución que aprueba el título profesional.');
+
+    INSERT INTO Documento.Diploma (IdTramite, TipoDiploma, NroDiploma, FechaExpedicion, FirmanteDecano)
+    SELECT @IdTramite,'TITULO_PROFESIONAL', @NroDiploma, GETDATE(), f.NombreDecano
+    FROM Academico.Facultad f
+    JOIN Academico.ProgramaEstudios pe ON pe.IdFacultad = f.IdFacultad
+    JOIN Academico.Matricula m ON m.IdPrograma = pe.IdPrograma
+    WHERE m.IdMatricula = (SELECT TOP 1 IdMatricula FROM Tramite.Tramite WHERE IdTramite = @IdTramite);
+
+    COMMIT TRANSACTION;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    INSERT INTO dbo.ErrorLog_Transacciones (NumeroError, LineaError, MensajeError, Procedimiento, TransaccionAbortada)
+    VALUES (ERROR_NUMBER(), ERROR_LINE(), ERROR_MESSAGE(),'SP_AprobarTituloProfesional', 1);
+    THROW;
+  END CATCH
+END;
+GO
+
+EXEC dbo.SP_AprobarTituloProfesional
+  @IdTramite = 1, @IdEvaluacionFinal = 5,
+  @FechaResolucion = '2026-07-01', @OrganoEmisor = 'CONSEJO DE FACULTAD',
+  @NroDiploma = 'DIP-2026-001';`,
+      justif:["Atomicidad con transacción explícita (BEGIN/COMMIT/ROLLBACK).","TRY...CATCH captura errores y garantiza reversión de datos.","Validaciones previas evitan violaciones de reglas de negocio.","Registro de errores con número, línea y mensaje para auditoría."],
+      buenas:["Transacciones para coherencia multi-tabla.","Manejo estructurado de errores.","Validar antes de modificar.","SET NOCOUNT ON para mejor rendimiento.","Usar THROW (no RAISERROR)."]
+    },
+    {
+      titulo:"Simulación y resolución de bloqueos",
+      enun:"Simular un bloqueo entre dos coordinadores que modifican el mismo trámite. Detectar con DMV la sesión bloqueadora, liberar los recursos y elaborar un reporte del incidente.",
+      code:`-- SESIÓN 1 (Coordinador A)
+BEGIN TRANSACTION;
+UPDATE Tramite.Tramite SET Observaciones = 'Coordinador A...' WHERE IdTramite = 1;
+WAITFOR DELAY '00:00:20'; -- transacción abierta (sin COMMIT)
+
+-- SESIÓN 2 (Coordinador B)
+BEGIN TRANSACTION;
+UPDATE Tramite.Tramite SET Observaciones = 'Coordinador B...' WHERE IdTramite = 1;
+-- queda esperando (bloqueado)
+
+-- Detección con DMV
+SELECT
+  r.session_id AS SesionBloqueada, r.blocking_session_id AS SesionBloqueadora,
+  r.wait_type AS EsperaMs, r.wait_time AS wait_time_ms,
+  t1.text AS SQL_Bloqueada, t2.text AS SQL_Bloqueadora
+FROM sys.dm_exec_requests r
+LEFT JOIN sys.dm_exec_requests r2 ON r2.session_id = r.blocking_session_id
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t1
+OUTER APPLY sys.dm_exec_sql_text(r2.sql_handle) t2
+WHERE r.blocking_session_id > 0;
+
+-- Liberar recursos (opción controlada, en la SESIÓN 1)
+COMMIT TRANSACTION; -- o ROLLBACK TRANSACTION;
+-- Opción administrativa (extremo): KILL 51;
+
+-- Registro del incidente
+INSERT INTO dbo.Bloqueos_Reporte
+  (SesionBloqueada, SesionBloqueadora, TextoBloqueada, TextoBloqueadora, TiempoEsperaMs, AccionTomada, Resultado)
+SELECT r.session_id, r.blocking_session_id, t1.text, t2.text, r.wait_time,
+       'Kill sesión bloqueadora','Resuelto'
+FROM sys.dm_exec_requests r
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t1
+OUTER APPLY sys.dm_exec_sql_text(r2.sql_handle) t2
+WHERE r.blocking_session_id > 0;`,
+      justif:["Un bloqueo es un recurso en uso exclusivo que impide el acceso a otras sesiones.","sys.dm_exec_requests identifica procesos, recursos y la víctima.","El ciclo de espera se rompe imponiendo un orden único de acceso.","La solución es consistente, simple y duradera."],
+      buenas:["Definir y documentar un orden de acceso a tablas compartidas.","Mantener transacciones cortas.","Capturar y analizar deadlocks con Extended Events.","Probar en laboratorio antes de aplicar en producción."]
+    },
+    {
+      titulo:"Prevención de deadlocks",
+      enun:"Durante la asignación simultánea de asesores y jurados se producen deadlocks. Reproducir, capturar el gráfico XML, analizar la causa, rediseñar el orden de acceso y demostrar la eliminación del conflicto.",
+      code:`-- Captura del deadlock con Extended Events
+CREATE EVENT SESSION [DeadLock_Capture_Grados] ON SERVER
+ADD EVENT sqlserver.xml_deadlock_report
+ADD TARGET package0.event_file(
+  SET filename = N'C:\\XE_Sessions\\DeadLocks_Grados.xel')
+WITH (STARTUP_STATE = ON);
+GO
+ALTER EVENT SESSION [DeadLock_Capture_Grados] ON SERVER STATE = START;
+GO
+
+-- Obtener el último deadlock
+SELECT CAST(event_data AS XML) AS DeadlockGraph
+FROM sys.fn_xe_file_target_read_file(
+  N'C:\\XE_Sessions\\DeadLocks_Grados*.xel', NULL, NULL, NULL);
+
+-- SESIÓN 1 (orden Asesor -> Jurado): produce deadlock
+BEGIN TRANSACTION;
+  INSERT INTO Tramite.DesignacionAsesor ...;
+  WAITFOR DELAY '00:00:05';
+  INSERT INTO Tramite.DesignacionJurado ...;
+COMMIT TRANSACTION;
+
+-- SESIÓN 2 (orden Jurado -> Asesor): produce deadlock
+BEGIN TRANSACTION;
+  INSERT INTO Tramite.DesignacionJurado ...;
+  WAITFOR DELAY '00:00:05';
+  INSERT INTO Tramite.DesignacionAsesor ...;
+COMMIT TRANSACTION;
+
+-- CORRECCIÓN: unificar el orden en ambas sesiones (Asesor -> Jurado)
+BEGIN TRANSACTION;
+  INSERT INTO Tramite.DesignacionAsesor ...;
+  WAITFOR DELAY '00:00:05';
+  INSERT INTO Tramite.DesignacionJurado ...;
+COMMIT TRANSACTION;
+-- Resultado esperado: no hay deadlock, solo bloqueos temporales normales.`,
+      justif:["Causa: orden de acceso inconsistente (A→J vs J→A) genera espera circular.","Solución: usar siempre el mismo orden de acceso.","El ciclo de espera se rompe imponiendo un orden único de acceso.","La solución es consistente, simple y duradera."],
+      buenas:["Definir y documentar un orden de acceso a tablas compartidas.","Mantener transacciones cortas.","Capturar y analizar deadlocks con Extended Events.","Probar en laboratorio antes de aplicar en producción."]
+    }
+  ]
+},
+{
+  num:4,
+  id:"planes",
+  title:"Planes de Ejecución",
+  sub:"Cómo lee SQL Server tus consultas",
+  type:"ANÁLISIS", color:"#B39DDB",
+  info:[
+    {h:"¿Qué es?", p:"Representación gráfica o en texto que muestra el orden de las operaciones que realiza SQL Server para ejecutar una consulta. Permite identificar operaciones costosas, escaneos innecesarios y oportunidades de optimización."},
+    {h:"Componentes", p:"Operadores (acciones físicas/lógicas), Flujo de datos (orden de movimiento entre operadores), Costo relativo (porcentaje estimado por operador) y Estimaciones (filas, tamaño de datos, ejecuciones)."},
+  ],
+  bullets:[
+    "Table Scan: lee todas las filas, alto costo si la tabla es grande. Index Seek: usa un índice para localizar solo las filas necesarias, muy eficiente.",
+    "Nested Loops Join: itera una tabla por cada fila de la otra, bueno en conjuntos pequeños. Hash Match Join: une tablas con tabla hash, ideal para volúmenes grandes.",
+    "Herramientas: Include Actual Execution Plan (Ctrl+M), Live Query Statistics, SET STATISTICS IO/TIME ON, DMVs sys.dm_exec_query_stats / sys.dm_exec_query_plan.",
+    "¿Qué buscar? Operadores con costo relativo >30%, Table Scans en tablas grandes, filtros aplicados después de escanear, conversión implícita o spills a tempdb."
+  ],
+  ejercicios:[
+    {
+      titulo:"Diagnóstico de consultas complejas (reportes institucionales)",
+      enun:"Las consultas de reportes institucionales presentan tiempos >10 segundos. Analizar el plan de ejecución para identificar Table Scan, Hash Match, Sort y costos estimados, y proponer una versión optimizada.",
+      code:`-- Consulta original (lenta)
+SELECT p.DNI, p.Nombres, p.ApellidoPaterno, pro.NombrePrograma,
+       t.IdTramite, tt.Descripcion, t.FechaInicio, r.NroResolucion, d.NroDiploma,
+       s.FechaHora, s.Condicion, s.PuntajeObtenido
+FROM Tramite.Tramite t
+JOIN Academico.Matricula m ON t.IdMatricula = m.IdMatricula
+JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+JOIN Academico.ProgramaEstudios pro ON m.IdPrograma = pro.IdPrograma
+JOIN Catalogo.TipoTramite tt ON t.IdTipoTramite = tt.IdTipoTramite
+LEFT JOIN Tramite.TrabajoInvestigacion ti ON ti.IdTramite = t.IdTramite
+LEFT JOIN Evaluacion.Sustentacion s ON s.IdTrabajo = ti.IdTrabajo
+LEFT JOIN Evaluacion.EvaluacionTrabajo ev ON ev.IdTrabajo = ti.IdTrabajo AND ev.EtapaEvaluacion = 'SUSTENTACION'
+LEFT JOIN Documento.Resolucion r ON r.IdTramite = t.IdTramite AND r.TipoResolucion = 'APROBACION_TITULO'
+LEFT JOIN Documento.Diploma d ON d.IdTramite = t.IdTramite AND d.TipoDiploma = 'TITULO_PROFESIONAL'
+WHERE t.IdEstadoTramite = 5
+ORDER BY t.FechaInicio DESC;
+
+-- Índice recomendado
+CREATE NONCLUSTERED INDEX IX_Tramite_Estado_Incl
+ON Tramite.Tramite (IdEstadoTramite)
+INCLUDE (IdMatricula, FechaInicio, IdTipoTramite);
+UPDATE STATISTICS Tramite.Tramite;
+
+-- Consulta optimizada (usa OUTER APPLY)
+SELECT p.DNI, p.Nombres, p.ApellidoPaterno, pro.NombrePrograma,
+       t.IdTramite, tt.Descripcion, t.FechaInicio, r.NroResolucion, d.NroDiploma,
+       s.FechaHora, s.Condicion, s.PuntajeObtenido
+FROM Tramite.Tramite t
+JOIN Academico.Matricula m ON t.IdMatricula = m.IdMatricula
+JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+JOIN Academico.ProgramaEstudios pro ON m.IdPrograma = pro.IdPrograma
+JOIN Catalogo.TipoTramite tt ON t.IdTipoTramite = tt.IdTipoTramite
+OUTER APPLY (
+  SELECT TOP 1 s.FechaHora, s.Condicion, s.PuntajeObtenido
+  FROM Evaluacion.Sustentacion s
+  JOIN Tramite.TrabajoInvestigacion ti ON ti.IdTrabajo = s.IdTrabajo
+  WHERE ti.IdTramite = t.IdTramite
+  ORDER BY s.NumeroSustentacion DESC
+) sust
+LEFT JOIN Documento.Resolucion r ON r.IdTramite = t.IdTramite AND r.TipoResolucion = 'APROBACION_TITULO'
+LEFT JOIN Documento.Diploma d ON d.IdTramite = t.IdTramite AND d.TipoDiploma = 'TITULO_PROFESIONAL'
+WHERE t.IdEstadoTramite = 5
+ORDER BY t.FechaInicio DESC;`,
+      justif:["El índice IX_Tramite_Estado_Incl convierte el Index Scan en Index Seek, reduciendo drásticamente las lecturas.","OUTER APPLY limita filas y aprovecha los índices existentes, eliminando Hash Match innecesarios.","Menor volumen de datos procesados antes de ordenar.","Comparación con STATISTICS IO/TIME demuestra la mejora cuantitativa."],
+      buenas:["Antes de optimizar: medir, analizar y entender el plan.","Crear índices de cobertura (INCLUDE) para evitar Key Lookup.","Usar APPLY/TOP para traer solo lo necesario.","Actualizar estadísticas después de crear índices."]
+    },
+    {
+      titulo:"Comparación de planes antes y después de crear índices",
+      enun:"Comprobar el impacto real de nuevos índices sobre las consultas del módulo de grados: obtener plan inicial, crear índices adecuados, obtener nuevo plan y comparar operadores, costo estimado y tiempo total.",
+      code:`-- Consulta ORIGINAL (sin índice)
+SELECT p.DNI, p.Nombres, p.ApellidoPaterno, tt.Descripcion
+FROM Academico.Persona p
+JOIN Academico.Matricula m ON p.IdPersona = m.IdEstudiante
+JOIN Tramite.Tramite t ON m.IdMatricula = t.IdMatricula
+JOIN Catalogo.TipoTramite tt ON t.IdTipoTramite = tt.IdTipoTramite
+WHERE p.ApellidoPaterno = 'PEREZ';
+-- Plan: Index Scan / Table Scan -> Nested Loops -> Output
+-- Lecturas lógicas ~2000, tiempo CPU ~300 ms, costo estimado 0.5
+
+-- Crear índice faltante
+CREATE NONCLUSTERED INDEX IX_Persona_ApellidoPat
+ON Academico.Persona (ApellidoPaterno)
+INCLUDE (DNI, Nombres, ApellidoMaterno);
+UPDATE STATISTICS Academico.Persona;
+
+-- Misma consulta tras el índice
+-- Plan: Index Seek (IX_Persona_ApellidoPat) -> Nested Loops -> Output
+-- Lecturas lógicas ~50, tiempo CPU ~10 ms, costo estimado 0.05`,
+      justif:["Índice sobre la columna de filtro reduce el escaneo completo.","Cobertura con INCLUDE evita accesos adicionales a la tabla base.","Misma consulta antes y después para medir el impacto real.","Actualizar estadísticas siempre tras crear índices."],
+      buenas:["Comparar operadores, lecturas lógicas y costo estimado.","Documentar resultados con planes e indicadores.","Repetir la prueba en condiciones similares.","Evitar cambios simultáneos que distorsionen la comparación."]
+    },
+    {
+      titulo:"Optimización de procedimientos almacenados (generación de resoluciones)",
+      enun:"Los procedimientos que generan resoluciones presentan degradación de rendimiento. Detectar operadores costosos, eliminar Table Scan, reducir lecturas lógicas, mejorar la reutilización del plan y documentar la optimización.",
+      code:`-- Procedimiento ORIGINAL (con problemas)
+CREATE PROCEDURE Documento.sp_GenerarResolucionTitulo
+  @IdTramite INT
+AS
+BEGIN
+  INSERT INTO Documento.Resolucion (IdTramite, TipoResolucion, NroResolucion, FechaResolucion, OrganoEmisor, Descripcion)
+  SELECT @IdTramite,'APROBACION_TITULO',
+         'RES-' + FORMAT(GETDATE(),'yyyyMMdd') + '-' + CAST(@IdTramite AS VARCHAR),
+         GETDATE(),'CONSEJO DE FACULTAD',
+         'Resolución para ' + p.Nombres + ' ' + p.ApellidoPaterno
+  FROM Tramite.Tramite t
+  JOIN Academico.Matricula m ON t.IdMatricula = m.IdMatricula
+  JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+  WHERE t.IdTramite = @IdTramite;
+END;
+-- Problemas: Table/Index Scan en Tramite, subconsulta innecesaria,
+-- uso de FORMAT (costoso), más lecturas lógicas.
+
+-- Procedimiento OPTIMIZADO
+CREATE OR ALTER PROCEDURE Documento.sp_GenerarResolucionTitulo_Opt
+  @IdTramite INT
+AS
+BEGIN
+  SET NOCOUNT ON;
+  DECLARE @NombreCompleto VARCHAR(200), @NroResolucion VARCHAR(50);
+
+  SELECT @NombreCompleto = p.Nombres + ' ' + p.ApellidoPaterno
+  FROM Tramite.Tramite t
+  JOIN Academico.Matricula m ON t.IdMatricula = m.IdMatricula
+  JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+  WHERE t.IdTramite = @IdTramite; -- Index Seek con IX_Tramite_Estado_Incl
+
+  SET @NroResolucion = 'RES-' + CONVERT(VARCHAR(8), GETDATE(), 112) + '-' + CAST(@IdTramite AS VARCHAR);
+
+  INSERT INTO Documento.Resolucion (IdTramite, TipoResolucion, NroResolucion, FechaResolucion, OrganoEmisor, Descripcion)
+  VALUES (@IdTramite,'APROBACION_TITULO', @NroResolucion, GETDATE(),
+          'CONSEJO DE FACULTAD','Resolución para ' + @NombreCompleto);
+END;
+GO`,
+      justif:["Analizar el plan antes de cambiar el código.","Evitar funciones costosas (FORMAT).","Obtener datos una sola vez y en variables.","Índices adecuados + estadísticas al día.","Medir antes y después con STATISTICS."],
+      buenas:["Index Seek en todas las tablas involucradas.","Menos lecturas lógicas (>90% menos).","Código más limpio y reutilizable.","Plan estable y reutilizable."]
+    }
+  ]
+},
+{
+  num:5,
+  id:"optim",
+  title:"Optimización de Consultas T-SQL",
+  sub:"Reescritura, índices y buenas prácticas de rendimiento",
+  type:"RENDIMIENTO", color:"#81C784",
+  info:[
+    {h:"¿Qué es?", p:"Proceso de reescribir y ajustar consultas para que el optimizador de SQL Server elija el plan de ejecución más eficiente, reduciendo tiempo y consumo de recursos."},
+    {h:"Ciclo de optimización", p:"1) Analizar consultas lentas. 2) Examinar el plan y costos. 3) Optimizar (índices/reescritura). 4) Probar y comparar resultados. 5) Monitorear continuamente."},
+  ],
+  bullets:[
+    "Técnicas: usar índices apropiados, evitar funciones sobre columnas del WHERE, búsqueda sargable, seleccionar solo lo necesario (evitar SELECT *), evitar joins innecesarios, parametrizar consultas y mantener estadísticas.",
+    "Operadores costosos a evitar: Table Scan, Index Scan, Hash Match, Sort y Key Lookup — cada uno con su alternativa recomendada (Index Seek, Nested/Merge Join, índices con INCLUDE).",
+    "Checklist rápido: ¿filtros en columnas indexadas? ¿se evitan funciones en columnas? ¿la consulta retorna solo lo necesario? ¿el plan evita Table/Index Scans costosos? ¿estadísticas actualizadas?"
+  ],
+  ejercicios:[
+    {
+      titulo:"Reescritura de consultas de alta demanda (historial del trámite)",
+      enun:"Las consultas para mostrar el historial completo del trámite de un estudiante consumen recursos excesivos. Optimizar eliminando subconsultas innecesarias, usando JOIN eficientes, EXISTS y CTE, comparando tiempos.",
+      code:`-- Consulta original (ineficiente)
+SELECT p.DNI, p.Nombres, p.ApellidoPaterno,
+  (SELECT COUNT(*) FROM Tramite.Tramite t2 WHERE t2.IdMatricula = m.IdMatricula) AS TotalPagos,
+  (SELECT MAX(t.FechaInicio) FROM Tramite.Tramite t WHERE t.IdMatricula = m.IdMatricula) AS UltimaSustentacion,
+  CASE WHEN EXISTS (SELECT 1 FROM Documento.Diploma d WHERE d.IdTramite = t.IdTramite
+                     AND d.TipoDiploma = 'TITULO_PROFESIONAL') THEN 'Sí' ELSE 'No' END AS DiplomaEmitido
+FROM Academico.Matricula m
+JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+WHERE p.DNI = '12345678';
+
+-- Consulta optimizada (CTE + OUTER APPLY)
+WITH Estudiante AS (
+  SELECT IdPersona, DNI, Nombres, ApellidoPaterno, ApellidoMaterno
+  FROM Academico.Persona WHERE DNI = '12345678'
+),
+Matriculas AS (
+  SELECT e.IdPersona, m.IdMatricula, m.IdEstudiante
+  FROM Estudiante e JOIN Academico.Matricula m ON e.IdPersona = m.IdEstudiante
+),
+Tramites AS (
+  SELECT t.IdMatricula, t.IdTramite, t.FechaInicio,
+    COUNT(*) OVER (PARTITION BY t.IdMatricula) AS TotalPagos
+  FROM Tramite.Tramite t
+  WHERE t.IdMatricula IN (SELECT IdMatricula FROM Matriculas)
+)
+SELECT e.DNI, e.Nombres, e.ApellidoPaterno, tt.TotalPagos, tt.UltimaSustentacion, tt.DiplomaEmitido
+FROM Estudiante e
+JOIN Matriculas mm ON mm.IdPersona = e.IdPersona
+OUTER APPLY (
+  SELECT TOP 1 t.TotalPagos, MAX(t.FechaInicio) AS UltimaSustentacion,
+    CASE WHEN EXISTS (SELECT 1 FROM Documento.Diploma d WHERE d.IdTramite = t.IdTramite
+                       AND d.TipoDiploma = 'TITULO_PROFESIONAL') THEN 'Sí' ELSE 'No' END AS DiplomaEmitido
+  FROM Tramites t WHERE t.IdMatricula = mm.IdMatricula
+  GROUP BY t.TotalPagos
+) tt;
+-- Lecturas lógicas: 820 -> 24 | Tiempo CPU: 120 ms -> 150 ms | Duración: >1s -> 2 ms`,
+      justif:["Se eliminan subconsultas correlacionadas que se ejecutaban fila a fila.","CTE filtra temprano (DNI) y reduce el conjunto de trabajo.","OUTER APPLY con agregaciones permite un plan más eficiente usando índices de cobertura en Persona.","Reduce lecturas lógicas y tiempo de ejecución drásticamente."],
+      buenas:["Filtrar lo antes posible.","Usar JOINs y APPLY en lugar de subconsultas.","Índices de cobertura (INCLUDE).","Medir siempre antes y después (STATISTICS IO, TIME)."]
+    },
+    {
+      titulo:"Optimización de reportes académicos (más de ocho tablas)",
+      enun:"Los reportes institucionales integran información de más de ocho tablas. Desarrollar una versión optimizada utilizando CTE, funciones ventana, índices adecuados, filtrado temprano y comparación de rendimiento.",
+      code:`WITH FiltroTramites AS (
+  SELECT t.IdTramite, t.IdMatricula, t.IdTipoTramite, t.FechaInicio
+  FROM Tramite.Tramite t
+  WHERE t.FechaInicio >= '2026-01-01'
+),
+DatosBase AS (
+  SELECT ft.IdTramite, p.DNI, p.Nombres + ' ' + p.ApellidoPaterno AS Estudiante,
+         pr.NombrePrograma, tt.Descripcion, ft.FechaInicio
+  FROM FiltroTramites ft
+  JOIN Academico.Matricula m ON ft.IdMatricula = m.IdMatricula
+  JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+  JOIN Academico.ProgramaEstudios pr ON m.IdPrograma = pr.IdPrograma
+  JOIN Catalogo.TipoTramite tt ON ft.IdTipoTramite = tt.IdTipoTramite
+),
+Sustentaciones AS (
+  SELECT ti.IdTramite, s.FechaHora, s.PuntajeObtenido,
+    ROW_NUMBER() OVER (PARTITION BY ti.IdTramite ORDER BY s.FechaHora DESC) AS rn_sust
+  FROM Evaluacion.Sustentacion s
+  JOIN Tramite.TrabajoInvestigacion ti ON ti.IdTrabajo = s.IdTrabajo
+)
+SELECT db.IdTramite, db.DNI, db.Estudiante, db.NombrePrograma, db.Descripcion,
+       db.FechaInicio, sus.FechaHora, sus.PuntajeObtenido,
+       d.NroDiploma, r.NroResolucion
+FROM DatosBase db
+LEFT JOIN Sustentaciones sus ON sus.IdTramite = db.IdTramite AND sus.rn_sust = 1
+LEFT JOIN Documento.Diploma d ON d.IdTramite = db.IdTramite AND d.TipoDiploma = 'TITULO_PROFESIONAL'
+LEFT JOIN Documento.Resolucion r ON r.IdTramite = db.IdTramite AND r.TipoResolucion = 'APROBACION_TITULO'
+ORDER BY db.FechaInicio DESC;
+
+CREATE NONCLUSTERED INDEX IX_Tramite_FechaInicio
+ON Tramite.Tramite (FechaInicio) INCLUDE (IdMatricula, IdTipoTramite, IdTramite);
+UPDATE STATISTICS Tramite.Tramite; UPDATE STATISTICS Evaluacion.Sustentacion;
+-- Lecturas lógicas: 9.100 -> 480 | Tiempo CPU: 2.900 ms -> 1.100 ms | Duración: 7.5 s -> 2.4 s`,
+      justif:["Filtro temprano con CTE reduce el volumen de filas.","Índice para FechaInicio convierte Scan en Seek.","Funciones ventana (ROW_NUMBER) obtienen últimos registros sin duplicados.","Menos Sort, Hash Match y lecturas.","Estadísticas actualizadas para mejor plan."],
+      buenas:["Índices alineados al filtro principal.","Filtrar antes de unir.","Funciones ventana para obtener últimos registros.","Evitar SELECT * y columnas innecesarias.","Medir, comparar y documentar."]
+    },
+    {
+      titulo:"Optimización de procedimientos de búsqueda (localizar expedientes)",
+      enun:"El procedimiento que localiza expedientes consume demasiada CPU en horas de alta demanda. Optimizar mediante parametrización adecuada, eliminación de cursores, variables temporales/de tabla y revisión del Parameter Sniffing.",
+      code:`-- Original: procesa fila a fila con cursor (lento)
+CREATE OR ALTER PROCEDURE Tramite.BuscarExpedientes_Old
+  @ApellidoPaterno VARCHAR(100) = NULL, @IdPrograma SMALLINT = NULL, @Anio INT = NULL
+AS
+BEGIN
+  DECLARE cur CURSOR LOCAL FOR
+  SELECT t.IdTramite, p.Nombres, p.ApellidoPaterno
+  FROM Tramite.Tramite t
+  JOIN Academico.Matricula m ON t.IdMatricula = m.IdMatricula
+  JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+  WHERE (@ApellidoPaterno IS NULL OR p.ApellidoPaterno = @ApellidoPaterno)
+    AND (@IdPrograma IS NULL OR m.IdPrograma = @IdPrograma);
+  -- ... procesamiento fila por fila ...
+END;
+
+-- Procedimiento optimizado (set-based)
+CREATE OR ALTER PROCEDURE Tramite.BuscarExpedientes_Opt
+  @ApellidoPaterno VARCHAR(100) = NULL, @IdPrograma SMALLINT = NULL, @Anio INT = NULL
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SELECT t.IdTramite, p.Nombres, p.ApellidoPaterno, m.IdPrograma, t.FechaInicio
+  FROM Tramite.Tramite t
+  JOIN Academico.Matricula m ON t.IdMatricula = m.IdMatricula
+  JOIN Academico.Persona p ON m.IdEstudiante = p.IdPersona
+  WHERE (@ApellidoPaterno IS NULL OR p.ApellidoPaterno = @ApellidoPaterno)
+    AND (@IdPrograma IS NULL OR m.IdPrograma = @IdPrograma)
+    AND (@Anio IS NULL OR YEAR(t.FechaInicio) = @Anio)
+  OPTION (RECOMPILE);
+END;
+-- Lecturas lógicas: ~3.200 -> ~120 | Tiempo CPU: ~450 ms -> ~25 ms | Duración: ~520 ms -> ~30 ms`,
+      justif:["El cursor procesaba fila a fila (muy costoso); la versión set-based ejecuta la misma consulta en una sola pasada.","OPTION (RECOMPILE) evita planes subóptimos por Parameter Sniffing.","Menos lecturas y menor consumo de CPU."],
+      buenas:["Evitar cursores siempre que sea posible.","Parametrizar y usar variables locales.","Usar OPTION (RECOMPILE) en búsquedas con parámetros opcionales.","Aprovechar índices existentes/adecuados.","Medir y documentar las mejoras."]
+    }
+  ]
+},
+{
+  num:6,
+  id:"resource",
+  title:"Resource Governor",
+  sub:"Control, prioridad y equidad en el uso de recursos",
+  type:"GOBIERNO", color:"#F48FB1",
+  info:[
+    {h:"¿Qué es?", p:"Característica de SQL Server que permite controlar cómo los recursos del sistema (CPU, memoria y E/S) son utilizados por diferentes cargas de trabajo, evitando que una consulta consuma todos los recursos y afecte a otras."},
+    {h:"Arquitectura", p:"Conexiones → Clasificador (Classifier Function) → Grupo de trabajo (Workload Group) → Límites de recursos (Resource Pool) → Rendimiento estable."},
+  ],
+  bullets:[
+    "Componentes: Classifier Function, Resource Pool, Workload Group y Resource Governor propiamente dicho.",
+    "Vistas útiles para monitoreo: sys.resource_governor_resource_pools, sys.resource_governor_workload_groups, sys.dm_resource_governor_workload_groups, sys.dm_resource_governor_resource_pools.",
+    "Comandos clave: CREATE RESOURCE POOL, CREATE WORKLOAD GROUP, ALTER RESOURCE GOVERNOR WITH (CLASSIFIER_FUNCTION=...), ALTER RESOURCE GOVERNOR RECONFIGURE; y para desactivar: ALTER RESOURCE GOVERNOR DISABLE."
+  ],
+  ejercicios:[
+    {
+      titulo:"Administración de carga por tipo de usuario",
+      enun:"Limitar el consumo de recursos de los usuarios administrativos sin afectar las consultas institucionales críticas: crear Resource Pool, Workload Group, función clasificadora, limitar CPU/memoria y verificar con DMV.",
+      code:`CREATE RESOURCE POOL Pool_Admin
+WITH (MAX_CPU_PERCENT = 30, MAX_MEMORY_PERCENT = 30);
+GO
+
+CREATE WORKLOAD GROUP Group_Admin
+USING Pool_Admin;
+GO
+
+CREATE FUNCTION dbo.fn_Classifier_Admin()
+RETURNS SYSNAME
+WITH SCHEMABINDING
+AS
+BEGIN
+  DECLARE @grupo SYSNAME = N'default';
+  IF SUSER_SNAME() IN ('UPLA\\admintramites','UPLA\\adminreportes')
+     OR APP_NAME() LIKE N'%Admin Module%'
+    SET @grupo = N'Group_Admin';
+  RETURN @grupo;
+END;
+GO
+
+ALTER RESOURCE GOVERNOR WITH (CLASSIFIER_FUNCTION = dbo.fn_Classifier_Admin);
+ALTER RESOURCE GOVERNOR RECONFIGURE;
+GO
+
+-- Verificación
+SELECT * FROM sys.resource_governor_resource_pools;
+SELECT * FROM sys.resource_governor_workload_groups;
+
+SELECT s.session_id, s.login_name, s.program_name, g.name AS workload_group
+FROM sys.dm_exec_sessions s
+JOIN sys.resource_governor_workload_groups g ON s.group_id = g.group_id
+WHERE s.login_name = 'UPLA\\admintramites';`,
+      justif:["Resource Governor distribuye recursos de forma controlada entre cargas.","Pool_Admin limita CPU (30%) y memoria (30%) para evitar saturación.","Workload Group asocia las conexiones al pool y permite ajustes adicionales.","La función clasificadora utiliza login o APP_NAME para enrutar.","DMV permiten confirmar la clasificación y el consumo."],
+      buenas:["Pruebas en entorno de desarrollo.","Función clasificadora con SCHEMABINDING para evitar cambios accidentales.","Límites realistas y equilibrados.","Reconfigurar después de cambios (RECONFIGURE).","Clasificación basada en atributos confiables (login, APP_NAME)."]
+    },
+    {
+      titulo:"Priorización de procesos críticos",
+      enun:"Priorizar los procesos de emisión de diplomas sobre las consultas de reportes generales: crear grupos de carga diferenciados, priorizar procesos críticos, restringir consultas de baja prioridad y evaluar el impacto mediante pruebas.",
+      code:`CREATE RESOURCE POOL Pool_Critico
+WITH (MIN_CPU_PERCENT = 30, MAX_CPU_PERCENT = 60,
+      MIN_MEMORY_PERCENT = 30, MAX_MEMORY_PERCENT = 50);
+GO
+CREATE RESOURCE POOL Pool_Baja
+WITH (MAX_CPU_PERCENT = 20, MAX_MEMORY_PERCENT = 20);
+GO
+
+CREATE WORKLOAD GROUP Group_Critico
+USING Pool_Critico WITH (IMPORTANCE = HIGH);
+GO
+CREATE WORKLOAD GROUP Group_Baja
+USING Pool_Baja WITH (
+  IMPORTANCE = LOW,
+  REQUEST_MAX_CPU_TIME_SEC = 30,
+  REQUEST_MAX_MEMORY_GRANT_PERCENT = 5
+);
+GO
+
+CREATE FUNCTION dbo.fn_Classifier_Prioridad()
+RETURNS SYSNAME
+WITH SCHEMABINDING
+AS
+BEGIN
+  DECLARE @grupo SYSNAME = N'default';
+  IF APP_NAME() LIKE N'%ModuloDiplomas%'
+    SET @grupo = N'Group_Critico';
+  ELSE IF SUSER_SNAME() IN ('UPLA\\usuarios','UPLA\\estudiantes')
+    SET @grupo = N'Group_Baja';
+  RETURN @grupo;
+END;
+GO
+ALTER RESOURCE GOVERNOR WITH (CLASSIFIER_FUNCTION = dbo.fn_Classifier_Prioridad);
+ALTER RESOURCE GOVERNOR RECONFIGURE;
+GO
+-- Prueba de impacto: ejecutar consultas pesadas en Group_Baja mientras
+-- se emiten diplomas simultáneamente en Group_Critico y medir tiempos.`,
+      justif:["Pool_Critico reserva mínimo de CPU (20%) y puede usar hasta 60%.","Pool_Baja limita CPU (20%) y memoria (20%) para consultas que bloquean.","IMPORTANCE = HIGH prioriza al planificador.","REQUEST_MAX_CPU_TIME_SEC y MEMORY_GRANT_PERCENT limitan el impacto por consulta.","Clasificación por APP_NAME y Login separa claramente las cargas."],
+      buenas:["Reserva mínima garantiza recursos para tareas críticas.","Límites estrictos para usuarios generales.","IMPORTANCE asegura prioridad real.","Validar con pruebas de carga simultánea.","Ajustar porcentajes según el comportamiento real."]
+    },
+    {
+      titulo:"Monitoreo del consumo de recursos",
+      enun:"Conocer el comportamiento de CPU y memoria consumidos por cada grupo de trabajo: mostrar consumo por grupo, memoria utilizada, número de solicitudes activas, sesiones activas por grupo y un reporte consolidado.",
+      code:`-- Consumo de CPU y memoria por grupo
+SELECT rp.name AS Pool, rp.pool_id, rp.min_cpu_percent, rp.max_cpu_percent,
+       rp.min_memory_percent, rp.max_memory_percent,
+       stats.cpu_usage_percent, stats.used_memory_kb/1024.0 AS CPU_Segundos,
+       stats.total_cpu_usage_ms/1000.0 AS CPU_Segundos_Total,
+       stats.active_sessions_count AS Sesiones_Activas
+FROM sys.resource_governor_resource_pools rp
+LEFT JOIN sys.dm_resource_governor_resource_pool_stats stats ON rp.pool_id = stats.pool_id;
+
+-- Estadísticas por Workload Group
+SELECT wg.name AS Workload_Group, wg.importance, wg.request_max_cpu_time_sec,
+       stats.total_cpu_usage_ms/1000.0 AS CPU_Segundos,
+       stats.active_parallel_threads_count AS Hilos_Paralelos
+FROM sys.resource_governor_workload_groups wg
+LEFT JOIN sys.dm_resource_governor_workload_groups stats ON wg.group_id = stats.group_id;
+
+-- Sesiones activas por grupo
+SELECT s.session_id, s.login_name, s.host_name, wg.name AS Workload_Group,
+       s.status, s.cpu_time, s.memory_usage, s.total_elapsed_time
+FROM sys.dm_exec_sessions s
+LEFT JOIN sys.resource_governor_workload_groups wg ON s.group_id = wg.group_id
+ORDER BY wg.name, s.session_id;
+
+-- Reporte consolidado
+SELECT 'Resource Governor Summary' AS Reporte, SYSDATETIME() AS Fecha_Generacion,
+  (SELECT COUNT(*) FROM sys.resource_governor_resource_pools) AS Total_Pools,
+  (SELECT COUNT(*) FROM sys.resource_governor_workload_groups) AS Total_Grupos,
+  (SELECT SUM(cpu_usage_percent)/1000.0 FROM sys.dm_resource_governor_resource_pool_stats) AS CPU_Total_Segs,
+  (SELECT SUM(active_sessions_count) FROM sys.dm_resource_governor_resource_pool_stats) AS Sesiones_Activas_Totales;`,
+      justif:["DMV de Resource Governor proporcionan métricas reales de uso de CPU, memoria y solicitudes.","Permite detectar cuellos de botella.","Visión completa configuración + uso en tiempo real.","Datos ligeros y confiables para monitoreo continuo.","Ideal para reportes y alertas automáticas."],
+      buenas:["Monitoreo periódico y automatizado.","Integrar métricas en contextos de carga real.","Ajustar pools y grupos según tendencias.","Separar reportes por granularidad (pool, grupo, sesión).","Conservar históricos para análisis de capacidad."]
+    }
+  ]
+}
+];
+
+/* ============ RENDER ============ */
+function esc(s){return s;} // content already safe, keep code readability
+
+function renderCompareTable(cmp){
+  if(!cmp) return "";
+  const head = cmp.headers.map(h=>`<th>${h}</th>`).join("");
+  const rows = cmp.rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("");
+  return `<div class="table-scroll"><table class="dex-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderProyecto(pr, ti, pi){
+  return `
+  <div class="proyecto">
+    <div class="proyecto-head">
+      <span class="pnum pixel">P${pi+1}</span>
+      <h5>${pr.titulo}</h5>
+    </div>
+    <div class="proyecto-body">
+      <p class="enun"><b>Enunciado:</b> ${pr.enun}</p>
+      <pre class="code">${pr.code}</pre>
+      <div class="two-col">
+        <div>
+          <div class="subhead" style="margin-top:0;font-size:.82rem;">Justificación técnica</div>
+          <ul class="pill-list">${pr.justif.map(j=>`<li>${j}</li>`).join("")}</ul>
+        </div>
+        <div>
+          <div class="subhead" style="margin-top:0;font-size:.82rem;">Buenas prácticas</div>
+          <ul class="pill-list good">${pr.buenas.map(j=>`<li>${j}</li>`).join("")}</ul>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderTema(t, idx){
+  const info = t.info.map(i=>`<div class="mini-card"><h4>${i.h}</h4><p>${i.p}</p></div>`).join("");
+  const bullets = t.bullets.map(b=>`<li>${b}</li>`).join("");
+  const proyectos = t.ejercicios.map((p,pi)=>renderProyecto(p,idx,pi)).join("");
+  return `
+  <section class="tema" id="${t.id}">
+    <div class="tema-head">
+      <div class="tema-num pixel">N°${String(t.num).padStart(3,'0')}</div>
+      <div class="tema-titles">
+        <h2>${t.title}</h2>
+        <div class="sub">${t.sub}</div>
+      </div>
+      <span class="type-badge" style="background:${t.color}">${t.type}</span>
+    </div>
+    <div class="tema-body">
+      <div class="grid-cards">${info}</div>
+      ${t.compare ? `<div class="subhead"><span class="tag">DATA</span> Cuadro comparativo</div>${renderCompareTable(t.compare)}` : ""}
+      <div class="subhead"><span class="tag">INFO</span> Puntos clave</div>
+      <ul class="bullets">${bullets}</ul>
+
+      <div class="divider">Ejercicios de la ficha práctica</div>
+      <button class="catch-btn" data-target="drawer-${t.id}">
+        <span class="mini-ball"></span>
+        <span>¡Capturar ejercicios de este tema!</span>
+        <span class="chevron">▾</span>
+      </button>
+      <div class="exercises-drawer" id="drawer-${t.id}">
+        <div class="exercises-inner">${proyectos}</div>
+      </div>
+    </div>
+  </section>`;
+}
+
+const app = document.getElementById('app');
+app.innerHTML = temas.map(renderTema).join("");
+
+const nav = document.getElementById('navstrip');
+nav.innerHTML = temas.map(t=>`<a class="navpill" href="#${t.id}"><span class="dot"></span>T${t.num} · ${t.title}</a>`).join("");
+
+// toggle drawers
+document.querySelectorAll('.catch-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const id = btn.getAttribute('data-target');
+    const drawer = document.getElementById(id);
+    const isOpen = drawer.classList.toggle('open');
+    btn.classList.toggle('open', isOpen);
+    btn.querySelector('span:nth-child(2)').textContent = isOpen ? '¡Ejercicios capturados!' : '¡Capturar ejercicios de este tema!';
+  });
+});
+
+// scroll reveal
+const obs = new IntersectionObserver((entries)=>{
+  entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('show'); obs.unobserve(e.target); } });
+},{threshold:.08});
+document.querySelectorAll('.tema').forEach(el=>obs.observe(el));
+
+// back to top
+const topBtn = document.getElementById('topBtn');
+window.addEventListener('scroll', ()=>{
+  topBtn.classList.toggle('show', window.scrollY > 500);
+});
+topBtn.addEventListener('click', ()=>window.scrollTo({top:0, behavior:'smooth'}));
+</script>
+</body>
+</html>
